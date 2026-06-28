@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>おむかえ帳</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel (ブラウザでJSXを解釈するため) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // ── データ定数 ──────────────────────────────────────────────────
+    const PEOPLE = [
+      { id: "mother",   label: "母",      emoji: "👩", bg: "bg-rose-100",   text: "text-rose-700",   accent: "#E8547A", light: "#FFF0F5" },
+      { id: "father",   label: "父",      emoji: "👨", bg: "bg-indigo-100", text: "text-indigo-700", accent: "#4B5BA0", light: "#F0F2FF" },
+      { id: "famisapo", label: "ファミサポ", emoji: "🤝", bg: "bg-amber-100",  text: "text-amber-700",  accent: "#D97706", light: "#FFFBEB" },
+    ];
+
+    const ACTIVITIES = [
+      { id: "gakudo",  label: "学童",   emoji: "🏫", bg: "bg-sky-100",     text: "text-sky-700"     },
+      { id: "lesson",  label: "習い事", emoji: "🎵", bg: "bg-purple-100",  text: "text-purple-700"  },
+      { id: "home",    label: "直帰",   emoji: "🏠", bg: "bg-emerald-100", text: "text-emerald-700" },
+      { id: "holiday", label: "お休み", emoji: "🌸", bg: "bg-gray-100",    text: "text-gray-500"    },
+    ];
+
+    const WEEKLY_TEMPLATE = {
+      1: { time: "15:00", activity: "gakudo",  person: "",         lessonName: "", notes: "基本パターン" },
+      2: { time: "15:00", activity: "gakudo",  person: "father",   lessonName: "", notes: "基本パターン" },
+      3: { time: "14:30", activity: "lesson",  person: "famisapo", lessonName: "ピアノ", notes: "基本パターン" },
+      4: { time: "15:00", activity: "gakudo",  person: "mother",   lessonName: "", notes: "基本パターン" },
+      5: { time: "16:00", activity: "home",    person: "",         lessonName: "", notes: "基本パターン" },
+    ];
+
+    const DAY_NAMES   = ["日","月","火","水","木","金","土"];
+    const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+
+    const fmtKey = (y, m, d) => `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const parseKey = (k) => {
+      const [y,m,d] = k.split("-").map(Number);
+      return { year:y, month:m-1, day:d };
+    };
+
+    const getPerson   = (id) => PEOPLE.find(p => p.id === id);
+    const getActivity = (id) => ACTIVITIES.find(a => a.id === id);
+    const DEFAULT_DAY_DATA = { time:"15:00", activity:"gakudo", person:"", lessonName:"", notes:"" };
+
+    function App() {
+      const today = new Date();
+      const [viewDate, setViewDate]   = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+      const [schedule, setSchedule]   = useState({});
+      const [loading,  setLoading]    = useState(true);
+      const [modal,    setModal]      = useState(null);   
+      const [tab,      setTab]        = useState("calendar"); 
+
+      const year  = viewDate.getFullYear();
+      const month = viewDate.getMonth();
+      const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`;
+      const todayKey = fmtKey(today.getFullYear(), today.getMonth(), today.getDate());
+
+      // 永続化ストレージ（Notion内でも動くようlocalStorageに変更）
+      useEffect(() => {
+        try {
+          const res = localStorage.getItem("omukaecho-v1");
+          if (res) setSchedule(JSON.parse(res));
+        } catch(_) {}
+        setLoading(false);
+      }, []);
+
+      const persist = (next) => {
+        setSchedule(next);
+        try { localStorage.setItem("omukaecho-v1", JSON.stringify(next)); } catch(_) {}
+      };
+
+      const firstDOW    = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month+1, 0).getDate();
+      const isCurrentMonth = today.getFullYear()===year && today.getMonth()===month;
+
+      const shiftCounts = PEOPLE.reduce((acc, p) => {
+        acc[p.id] = Object.entries(schedule).filter(
+          ([k,v]) => k.startsWith(monthPrefix) && v.person===p.id && v.activity!=="holiday"
+        ).length;
+        return acc;
+      }, {});
+
+      const thisWeek = (() => {
+        if (!isCurrentMonth) return [];
+        const dow = today.getDay();
+        const mon = new Date(today); mon.setDate(today.getDate() - (dow===0 ? 6 : dow-1));
+        return Array.from({length:5}, (_,i) => {
+          const d = new Date(mon); d.setDate(mon.getDate()+i);
+          if (d.getMonth()!==month) return null;
+          const day = d.getDate();
+          const key = fmtKey(year, month, day);
+          return { day, key, dow:d.getDay(), data:schedule[key] };
+        }).filter(Boolean);
+      })();
+
+      const openEdit = (day) => {
+        const dow = new Date(year,month,day).getDay();
+        if (dow===0||dow===6) return;
+        const key = fmtKey(year, month, day);
+        setModal({ key, data: schedule[key] ? {...schedule[key]} : {...DEFAULT_DAY_DATA} });
+      };
+
+      const patchModal = (p) => setModal(prev => ({...prev, data:{...prev.data,...p}}));
+
+      const saveModal = () => {
+        if (!modal) return;
+        persist({...schedule, [modal.key]: modal.data});
+        setModal(null);
+      };
+
+      const claimShift = (key, personId) => {
+        const existing = schedule[key] || {...DEFAULT_DAY_DATA};
+        const next = { ...schedule, [key]: { ...existing, person: personId } };
+        persist(next);
+        if (modal && modal.key === key) setModal(null);
+      };
+
+      const applyMonthlyTemplate = () => {
+        if (!window.confirm(`${MONTH_NAMES[month]}の平日に基本パターンを一括適用しますか？`)) return;
+        const next = { ...schedule };
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dow = new Date(year, month, d).getDay();
+          if (dow === 0 || dow === 6) continue; 
+          const key = fmtKey(year, month, d);
+          if (!next[key]) {
+            const template = WEEKLY_TEMPLATE[dow];
+            if (template) next[key] = { ...template };
+          }
+        }
+        persist(next);
+      };
+
+      const deleteModal = () => {
+        if (!modal) return;
+        const next = {...schedule}; delete next[modal.key];
+        persist(next);
+        setModal(null);
+      };
+
+      const personSchedule = (pid) =>
+        Object.entries(schedule)
+          .filter(([k,v]) => k.startsWith(monthPrefix) && v.person===pid && v.activity!=="holiday")
+          .sort(([a],[b]) => a.localeCompare(b));
+
+      if (loading) return (
+        <div className="flex flex-col items-center justify-center h-screen" style={{background:"#FFF8F0"}}>
+          <div className="text-5xl mb-3">🚃</div>
+          <div className="text-gray-400 text-sm">読み込み中...</div>
+        </div>
+      );
+
+      const todayData   = schedule[todayKey];
+      const todayPerson = todayData?.person ? getPerson(todayData.person) : null;
+      const todayAct    = todayData?.activity ? getActivity(todayData.activity) : null;
+
+      return (
+        <div className="min-h-screen pb-10" style={{background:"linear-gradient(160deg,#FFF8F0 0%,#F0F2FF 100%)"}}>
+          <header style={{background:"linear-gradient(135deg,#F06030 0%,#C84070 100%)"}}>
+            <div className="max-w-lg mx-auto px-4 pt-5 pb-4">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🚉</span>
+                    <h1 className="text-xl font-bold text-white tracking-tight">おむかえ帳</h1>
+                  </div>
+                  <p className="text-xs text-orange-100 ml-9 mt-0.5">小1の壁、いっしょに乗り越えよう</p>
+                </div>
+                <div className="flex gap-1">
+                  {[["calendar","📅 月"],["shift","👥 人別"]].map(([t,l]) => (
+                    <button key={t} onClick={()=>setTab(t)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        tab===t ? "bg-white text-orange-600 font-bold" : "bg-white/20 text-white"
+                      }`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+
+              {isCurrentMonth && todayData && todayData.activity!=="holiday" && (
+                <div className="bg-white/20 border border-white/30 rounded-2xl p-3 flex items-center gap-3">
+                  <span className="text-3xl">{todayPerson?.emoji || "❓"}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-orange-100 font-medium">今日のおむかえ担当</p>
+                    <p className="font-bold text-white text-base">
+                      {todayPerson ? `${todayPerson.label}さん` : "❌ 担当者が決まっていません！"}
+                      <span className="ml-2 font-normal text-orange-200 text-sm">{todayData.time}着</span>
+                    </p>
+                    <p className="text-xs text-orange-100">
+                      {todayAct?.emoji}&nbsp;
+                      {todayData.activity==="lesson"&&todayData.lessonName ? todayData.lessonName : todayAct?.label}
+                      {todayData.notes && <span className="ml-1 opacity-80">· {todayData.notes}</span>}
+                    </p>
+                  </div>
+                  {!todayPerson && (
+                    <div className="flex flex-col gap-1">
+                      <button onClick={() => claimShift(todayKey, "mother")} className="bg-white text-rose-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">母</button>
+                      <button onClick={() => claimShift(todayKey, "father")} className="bg-white text-indigo-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">父</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </header>
+
+          <div className="max-w-lg mx-auto px-4 py-4">
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <div className="flex items-center gap-2">
+                <button onClick={()=>setViewDate(new Date(year,month-1,1))} className="w-8 h-8 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-500">‹</button>
+                <h2 className="font-bold text-gray-700 text-sm min-w-[80px] text-center">{year}年 {MONTH_NAMES[month]}</h2>
+                <button onClick={()=>setViewDate(new Date(year,month+1,1))} className="w-8 h-8 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-500">›</button>
+              </div>
+              <button onClick={applyMonthlyTemplate} className="bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 text-xs font-bold px-2.5 py-1.5 rounded-xl shadow-sm transition-colors">
+                ✨ 基本パターン流し込み
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              {PEOPLE.map(p => (
+                <div key={p.id} className="flex-1 rounded-2xl py-1.5 px-1 text-center" style={{backgroundColor:p.light}}>
+                  <div className="text-lg">{p.emoji}</div>
+                  <div className="text-[10px] font-medium" style={{color:p.accent}}>{p.label}</div>
+                  <div className="text-base font-bold" style={{color:p.accent}}>{shiftCounts[p.id]}<span className="text-xs font-normal">回</span></div>
+                </div>
+              ))}
+            </div>
+
+            {tab==="calendar" && (
+              <>
+                {isCurrentMonth && thisWeek.length>0 && (
+                  <div className="bg-white rounded-2xl shadow-sm p-3 mb-4">
+                    <p className="text-xs font-bold text-gray-400 mb-2">今週のおむかえ</p>
+                    <div className="flex gap-1.5">
+                      {thisWeek.map(({day,key,dow,data}) => {
+                        const p  = data?.person   ? getPerson(data.person)     : null;
+                        const ac = data?.activity ? getActivity(data.activity) : null;
+                        const isT = key===todayKey;
+                        const isSeeking = data && !data.person && data.activity !== "holiday";
+                        return (
+                          <div key={key} onClick={()=>openEdit(day)} className={`flex-1 rounded-xl p-1.5 text-center cursor-pointer ${isT ? "ring-2 ring-orange-400" : ""}`} style={{backgroundColor: isSeeking ? "#FEF2F2" : (p&&data.activity!=="holiday" ? p.light : "#F8F8F8")}}>
+                            <p className="text-[10px] text-gray-400">{DAY_NAMES[dow]}</p>
+                            <p className="text-xs font-bold text-gray-700">{day}</p>
+                            {ac && <p className="text-sm">{ac.emoji}</p>}
+                            {isSeeking ? <p className="text-[9px] font-bold text-red-500 animate-pulse">⚠️SOS</p> : p && data.activity!=="holiday" ? <p className="text-[10px] font-medium" style={{color:p.accent}}>{p.label}</p> : <p className="text-gray-300 text-[10px]">―</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <div className="grid grid-cols-7 border-b border-gray-50">
+                    {DAY_NAMES.map((d,i) => (
+                      <div key={d} className={`text-center text-[10px] py-1.5 ${i===0?"text-red-400":i===6?"text-indigo-400":"text-gray-400"}`}>{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7">
+                    {Array.from({length:firstDOW}).map((_,i) => <div key={`e${i}`} className="h-16 border-r border-b border-gray-50" />)}
+                    {Array.from({length:daysInMonth}).map((_,i) => {
+                      const day = i+1;
+                      const dow = new Date(year,month,day).getDay();
+                      const isWE = dow===0||dow===6;
+                      const isT  = year===today.getFullYear()&&month===today.getMonth()&&day===today.getDate();
+                      const key  = fmtKey(year,month,day);
+                      const data = schedule[key];
+                      const p    = data?.person   ? getPerson(data.person)     : null;
+                      const ac   = data?.activity ? getActivity(data.activity) : null;
+                      const isSeeking = data && !data.person && data.activity !== "holiday";
+
+                      return (
+                        <div key={day} onClick={()=>openEdit(day)} className={`h-16 border-r border-b border-gray-50 p-0.5 flex flex-col justify-between ${isWE ? "bg-gray-50" : `cursor-pointer ${isSeeking ? "bg-red-50/50" : "hover:bg-orange-50"}`} ${isT ? "ring-2 ring-orange-400 ring-inset" : ""}`}>
+                          <div className={`text-[10px] flex items-center justify-center ${isT ? "w-4 h-4 rounded-full bg-orange-500 text-white font-bold" : "text-gray-600"}`}>{day}</div>
+                          <div className="space-y-0.5">
+                            {ac && <div className={`text-[8px] rounded px-0.5 truncate ${ac.bg} ${ac.text}`}>{ac.emoji}{ac.id==="lesson"&&data.lessonName ? data.lessonName : ac.label}</div>}
+                            {isSeeking ? <div className="text-[8px] bg-red-100 text-red-700 font-bold rounded px-0.5 text-center animate-pulse">❓募集</div> : p && data.activity!=="holiday" && <div className={`text-[8px] rounded px-0.5 truncate ${p.bg} ${p.text}`}>{p.emoji}{p.label} {data.time}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {tab==="shift" && (
+              <div className="space-y-3">
+                {(() => {
+                  const openShifts = Object.entries(schedule).filter(([k,v]) => k.startsWith(monthPrefix) && !v.person && v.activity!=="holiday").sort(([a],[b]) => a.localeCompare(b));
+                  if (openShifts.length === 0) return null;
+                  return (
+                    <div className="bg-red-50 border border-red-200 rounded-2xl overflow-hidden">
+                      <div className="bg-red-500 text-white px-3 py-1.5 text-xs font-bold flex items-center justify-between">
+                        <span>📢 お迎え募集中（空きシフト）</span>
+                        <span className="bg-white text-red-600 px-1.5 py-0.5 rounded-full text-[10px]">{openShifts.length}件</span>
+                      </div>
+                      <div className="divide-y divide-red-100 bg-white">
+                        {openShifts.map(([key, data]) => {
+                          const {month:km,day:kd} = parseKey(key);
+                          const d = new Date(year,km,kd);
+                          const ac = getActivity(data.activity);
+                          return (
+                            <div key={key} className="p-2 flex items-center justify-between text-xs">
+                              <div>{km+1}/{kd}({DAY_NAMES[d.getDay()]}) <span className="font-mono text-gray-400">{data.time}</span> <span className="ml-1 text-gray-500">{ac?.emoji}{data.activity==="lesson"&&data.lessonName?data.lessonName:ac?.label}</span></div>
+                              <div className="flex gap-1">
+                                <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-bold">母</button>
+                                <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-bold">父</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {PEOPLE.map(p => {
+                  const days = personSchedule(p.id);
+                  return (
+                    <div key={p.id} className="bg-white rounded-2xl shadow-sm overflow-hidden text-xs">
+                      <div className="px-3 py-2 flex items-center gap-2" style={{background:`linear-gradient(135deg,${p.accent}15,${p.accent}05)`}}>
+                        <span className="text-xl">{p.emoji}</span>
+                        <div><p className="font-bold text-gray-800">{p.label}のシフト ({days.length}回)</p></div>
+                      </div>
+                      {days.length===0 ? <div className="py-4 text-center text-gray-300">担当なし</div> : (
+                        <div className="divide-y divide-gray-50 max-h-48 overflow-y-auto">
+                          {days.map(([key,data]) => {
+                            const {month:km,day:kd} = parseKey(key);
+                            const d = new Date(year,km,kd);
+                            const ac = getActivity(data.activity);
+                            return (
+                              <div key={key} className="flex items-center px-3 py-1.5 justify-between">
+                                <div className="w-20">{km+1}/{kd}({DAY_NAMES[d.getDay()]})</div>
+                                <div className="font-mono text-gray-400 w-10">{data.time}</div>
+                                <div className="flex-1 text-right truncate text-gray-500">{ac?.emoji}{data.activity==="lesson"&&data.lessonName?data.lessonName:ac?.label}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* モーダル */}
+          {modal && (
+            <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 text-sm" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+              <div className="bg-white w-full max-w-lg rounded-t-3xl p-4 space-y-4 max-h-[85vh] overflow-y-auto">
+                <div className="flex justify-between items-center border-b pb-2">
+                  <h3 className="font-bold text-gray-800">{(()=>{ const {month:km,day:kd} = parseKey(modal.key); return `${km+1}月${kd}日 (${DAY_NAMES[new Date(year,km,kd).getDay()]})`; })()}</h3>
+                  <button onClick={()=>setModal(null)} className="text-xl text-gray-400">×</button>
+                </div>
+                <div className="flex items-center justify-between bg-gray-50 p-2 rounded-xl">
+                  <span className="text-xs font-medium">🌸 学校がお休みの日</span>
+                  <button onClick={()=>patchModal({activity:modal.data.activity==="holiday"?"gakudo":"holiday"})} className={`w-10 h-5 rounded-full relative transition-colors ${modal.data.activity==="holiday"?"bg-orange-400":"bg-gray-200"}`}><span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${modal.data.activity==="holiday"?"left-5":"left-0.5"}`} /></button>
+                </div>
+                {modal.data.activity!=="holiday" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">🚉 駅お迎え時刻</label>
+                      <input type="time" value={modal.data.time||"15:00"} onChange={e=>patchModal({time:e.target.value})} className="w-full border rounded-xl p-2" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">📋 お迎え後の予定</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {ACTIVITIES.filter(a=>a.id!=="holiday").map(act => (
+                          <button key={act.id} onClick={()=>patchModal({activity:act.id})} className={`py-2 rounded-xl flex flex-col items-center border ${modal.data.activity===act.id ? `${act.bg} ${act.text} border-transparent font-bold` : "bg-white text-gray-400"}`}><span className="text-lg">{act.emoji}</span><span className="text-[10px]">{act.label}</span></button>
+                        ))}
+                      </div>
+                      {modal.data.activity==="lesson" && <input type="text" placeholder="習い事名" value={modal.data.lessonName||""} onChange={e=>patchModal({lessonName:e.target.value})} className="mt-1 w-full border rounded-xl p-2 text-xs" />}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">👤 お迎えする人</label>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <button onClick={()=>patchModal({person:""})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person==="" ? "bg-red-100 text-red-700 border-transparent font-bold" : "bg-white text-gray-400"}`}><span className="text-lg">❓</span><span className="text-[10px]">未定募集</span></button>
+                        {PEOPLE.map(p => (
+                          <button key={p.id} onClick={()=>patchModal({person:p.id})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person===p.id ? `${p.bg} ${p.text} border-transparent font-bold` : "bg-white text-gray-400"}`}><span className="text-lg">{p.emoji}</span><span className="text-[10px]">{p.label}</span></button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">📝 メモ</label>
+                      <input type="text" placeholder="メモ" value={modal.data.notes||""} onChange={e=>patchModal({notes:e.target.value})} className="w-full border rounded-xl p-2 text-xs" />
+                    </div>
+                  </>
+                )}
+                <div className="flex gap-2 pt-2">
+                  {schedule[modal.key] && <button onClick={deleteModal} className="text-red-500 px-2">削除</button>}
+                  <button onClick={()=>setModal(null)} className="flex-1 bg-gray-100 py-2 rounded-xl text-gray-600">消去</button>
+                  <button onClick={saveModal} className="flex-1 text-white py-2 rounded-xl font-bold" style={{background:"linear-gradient(135deg,#F06030,#C84070)"}}>保存</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
