@@ -20,10 +20,12 @@
     const { useState, useEffect } = React;
 
     // ── データ定数 ──────────────────────────────────────────────────
+    // ★ファミサポさんをAさん・Oさんの2名に変更（色分け設定）
     const PEOPLE = [
-      { id: "mother",   label: "母",      emoji: "👩", bg: "bg-rose-100",   text: "text-rose-700",   accent: "#E8547A", light: "#FFF0F5" },
-      { id: "father",   label: "父",      emoji: "👨", bg: "bg-indigo-100", text: "text-indigo-700", accent: "#4B5BA0", light: "#F0F2FF" },
-      { id: "famisapo", label: "ファミサポ", emoji: "🤝", bg: "bg-amber-100",  text: "text-amber-700",  accent: "#D97706", light: "#FFFBEB" },
+      { id: "mother",     label: "母",        emoji: "👩", bg: "bg-rose-100",   text: "text-rose-700",   accent: "#E8547A", light: "#FFF0F5" },
+      { id: "father",     label: "父",        emoji: "👨", bg: "bg-indigo-100", text: "text-indigo-700", accent: "#4B5BA0", light: "#F0F2FF" },
+      { id: "famisapo_a", label: "ファミサポA", emoji: "🤝", bg: "bg-amber-100",  text: "text-amber-700",  accent: "#D97706", light: "#FFFBEB" },
+      { id: "famisapo_o", label: "ファミサポO", emoji: "🤝", bg: "bg-emerald-100",text: "text-emerald-700",accent: "#059669", light: "#ECFDF5" },
     ];
 
     const ACTIVITIES = [
@@ -33,12 +35,13 @@
       { id: "holiday", label: "お休み", emoji: "🌸", bg: "bg-gray-100",    text: "text-gray-500"    },
     ];
 
+    // 基本パターンの設定例（必要に応じて画面から変更可能です）
     const WEEKLY_TEMPLATE = {
-      1: { time: "15:00", activity: "gakudo",  person: "",         lessonName: "", notes: "基本パターン" },
-      2: { time: "15:00", activity: "gakudo",  person: "father",   lessonName: "", notes: "基本パターン" },
-      3: { time: "14:30", activity: "lesson",  person: "famisapo", lessonName: "ピアノ", notes: "基本パターン" },
-      4: { time: "15:00", activity: "gakudo",  person: "mother",   lessonName: "", notes: "基本パターン" },
-      5: { time: "16:00", activity: "home",    person: "",         lessonName: "", notes: "基本パターン" },
+      1: { time: "15:00", activity: "gakudo",  person: "",           lessonName: "", notes: "基本パターン" },
+      2: { time: "15:00", activity: "gakudo",  person: "father",     lessonName: "", notes: "基本パターン" },
+      3: { time: "14:30", activity: "lesson",  person: "famisapo_a", lessonName: "ピアノ", notes: "基本パターン" },
+      4: { time: "15:00", activity: "gakudo",  person: "mother",     lessonName: "", notes: "基本パターン" },
+      5: { time: "16:00", activity: "home",    person: "famisapo_o", lessonName: "", notes: "基本パターン" },
     };
 
     const DAY_NAMES   = ["日","月","火","水","木","金","土"];
@@ -225,12 +228,13 @@
               </button>
             </div>
 
-            <div className="flex gap-2 mb-4">
+            {/* ★4人分のシフト集計カウンター */}
+            <div className="grid grid-cols-4 gap-1.5 mb-4">
               {PEOPLE.map(p => (
-                <div key={p.id} className="flex-1 rounded-2xl py-1.5 px-1 text-center" style={{backgroundColor:p.light}}>
-                  <div className="text-lg">{p.emoji}</div>
-                  <div className="text-[10px] font-medium" style={{color:p.accent}}>{p.label}</div>
-                  <div className="text-base font-bold" style={{color:p.accent}}>{shiftCounts[p.id]}<span className="text-xs font-normal">回</span></div>
+                <div key={p.id} className="rounded-2xl py-1.5 px-1 text-center" style={{backgroundColor:p.light}}>
+                  <div className="text-base">{p.emoji}</div>
+                  <div className="text-[9px] font-medium truncate" style={{color:p.accent}}>{p.label}</div>
+                  <div className="text-sm font-bold" style={{color:p.accent}}>{shiftCounts[p.id]}<span className="text-[10px] font-normal">回</span></div>
                 </div>
               ))}
             </div>
@@ -251,7 +255,7 @@
                             <p className="text-[10px] text-gray-400">{DAY_NAMES[dow]}</p>
                             <p className="text-xs font-bold text-gray-700">{day}</p>
                             {ac && <p className="text-sm">{ac.emoji}</p>}
-                            {isSeeking ? <p className="text-[9px] font-bold text-red-500 animate-pulse">⚠️SOS</p> : p && data.activity!=="holiday" ? <p className="text-[10px] font-medium" style={{color:p.accent}}>{p.label}</p> : <p className="text-gray-300 text-[10px]">―</p>}
+                            {isSeeking ? <p className="text-[9px] font-bold text-red-500 animate-pulse">⚠️SOS</p> : p && data.activity!=="holiday" ? <p className="text-[9px] font-medium truncate" style={{color:p.accent}}>{p.label}</p> : <p className="text-gray-300 text-[10px]">―</p>}
                           </div>
                         );
                       })}
@@ -283,7 +287,7 @@
                           <div className={`text-[10px] flex items-center justify-center ${isT ? "w-4 h-4 rounded-full bg-orange-500 text-white font-bold" : "text-gray-600"}`}>{day}</div>
                           <div className="space-y-0.5">
                             {ac && <div className={`text-[8px] rounded px-0.5 truncate ${ac.bg} ${ac.text}`}>{ac.emoji}{ac.id==="lesson"&&data.lessonName ? data.lessonName : ac.label}</div>}
-                            {isSeeking ? <div className="text-[8px] bg-red-100 text-red-700 font-bold rounded px-0.5 text-center animate-pulse">❓募集</div> : p && data.activity!=="holiday" && <div className={`text-[8px] rounded px-0.5 truncate ${p.bg} ${p.text}`}>{p.emoji}{p.label} {data.time}</div>}
+                            {isSeeking ? <div className="text-[8px] bg-red-100 text-red-700 font-bold rounded px-0.5 text-center animate-pulse">❓募集</div> : p && data.activity!=="holiday" && <div className={`text-[8px] rounded px-0.5 truncate ${p.bg} ${p.text}`}>{p.emoji}{p.label}</div>}
                           </div>
                         </div>
                       );
@@ -313,8 +317,8 @@
                             <div key={key} className="p-2 flex items-center justify-between text-xs">
                               <div>{km+1}/{kd}({DAY_NAMES[d.getDay()]}) <span className="font-mono text-gray-400">{data.time}</span> <span className="ml-1 text-gray-500">{ac?.emoji}{data.activity==="lesson"&&data.lessonName?data.lessonName:ac?.label}</span></div>
                               <div className="flex gap-1">
-                                <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-bold">母</button>
-                                <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-bold">父</button>
+                                <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-bold text-[10px]">母</button>
+                                <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-bold text-[10px]">父</button>
                               </div>
                             </div>
                           );
@@ -382,15 +386,18 @@
                       </div>
                       {modal.data.activity==="lesson" && <input type="text" placeholder="習い事名" value={modal.data.lessonName||""} onChange={e=>patchModal({lessonName:e.target.value})} className="mt-1 w-full border rounded-xl p-2 text-xs" />}
                     </div>
+
+                    {/* ★5つの選択肢（未定＋4人）をキレイに配置 */}
                     <div>
                       <label className="block text-xs font-medium mb-1">👤 お迎えする人</label>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        <button onClick={()=>patchModal({person:""})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person==="" ? "bg-red-100 text-red-700 border-transparent font-bold" : "bg-white text-gray-400"}`}><span className="text-lg">❓</span><span className="text-[10px]">未定募集</span></button>
+                      <div className="grid grid-cols-5 gap-1">
+                        <button onClick={()=>patchModal({person:""})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person==="" ? "bg-red-100 text-red-700 border-transparent font-bold" : "bg-white text-gray-400"}`}><span className="text-base">❓</span><span className="text-[9px] font-bold">未定募集</span></button>
                         {PEOPLE.map(p => (
-                          <button key={p.id} onClick={()=>patchModal({person:p.id})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person===p.id ? `${p.bg} ${p.text} border-transparent font-bold` : "bg-white text-gray-400"}`}><span className="text-lg">{p.emoji}</span><span className="text-[10px]">{p.label}</span></button>
+                          <button key={p.id} onClick={()=>patchModal({person:p.id})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person===p.id ? `${p.bg} ${p.text} border-transparent font-bold` : "bg-white text-gray-400"}`}><span className="text-base">{p.emoji}</span><span className="text-[9px] font-bold truncate w-full text-center">{p.label}</span></button>
                         ))}
                       </div>
                     </div>
+
                     <div>
                       <label className="block text-xs font-medium mb-1">📝 メモ</label>
                       <input type="text" placeholder="メモ" value={modal.data.notes||""} onChange={e=>patchModal({notes:e.target.value})} className="w-full border rounded-xl p-2 text-xs" />
@@ -398,9 +405,9 @@
                   </>
                 )}
                 <div className="flex gap-2 pt-2">
-                  {schedule[modal.key] && <button onClick={deleteModal} className="text-red-500 px-2">削除</button>}
-                  <button onClick={()=>setModal(null)} className="flex-1 bg-gray-100 py-2 rounded-xl text-gray-600">消去</button>
-                  <button onClick={saveModal} className="flex-1 text-white py-2 rounded-xl font-bold" style={{background:"linear-gradient(135deg,#F06030,#C84070)"}}>保存</button>
+                  {schedule[modal.key] && <button onClick={deleteModal} className="text-red-500 px-2 text-xs">削除</button>}
+                  <button onClick={()=>setModal(null)} className="flex-1 bg-gray-100 py-2 rounded-xl text-gray-600 text-xs">消去</button>
+                  <button onClick={saveModal} className="flex-1 text-white py-2 rounded-xl font-bold text-xs" style={{background:"linear-gradient(135deg,#F06030,#C84070)"}}>保存</button>
                 </div>
               </div>
             </div>
