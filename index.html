@@ -9,10 +9,11 @@
   <!-- React & ReactDOM CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel (ブラウザでJSXを解釈するため) -->
+  <!-- Babel CDN (JSXをブラウザで解釈するライブラリ) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
+  <!-- Reactを描画する要素をscriptより前に配置 -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -38,7 +39,7 @@
       3: { time: "14:30", activity: "lesson",  person: "famisapo", lessonName: "ピアノ", notes: "基本パターン" },
       4: { time: "15:00", activity: "gakudo",  person: "mother",   lessonName: "", notes: "基本パターン" },
       5: { time: "16:00", activity: "home",    person: "",         lessonName: "", notes: "基本パターン" },
-    ];
+    };
 
     const DAY_NAMES   = ["日","月","火","水","木","金","土"];
     const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
@@ -66,7 +67,7 @@
       const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`;
       const todayKey = fmtKey(today.getFullYear(), today.getMonth(), today.getDate());
 
-      // 永続化ストレージ（Notion内でも動くようlocalStorageに変更）
+      // 永続化ストレージ（localStorage）
       useEffect(() => {
         try {
           const res = localStorage.getItem("omukaecho-v1");
