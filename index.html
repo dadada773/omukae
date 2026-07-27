@@ -9,18 +9,38 @@
   <!-- React & ReactDOM CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel CDN (JSXをブラウザで解釈するライブラリ) -->
+  <!-- Babel CDN -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Firebase SDK (クラウド連携用) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
 <body>
-  <!-- Reactを描画する要素をscriptより前に配置 -->
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect } = React;
 
+    // ── ★ Firebaseの設定（ここをご自身の情報に書き換えてください） ──
+    const firebaseConfig = {
+        apiKey: "AIzaSyAq-YN7AKHt3Th3CXr8zIZc3E9I3dIxuxU",
+  authDomain: "omukae-app-3620d.firebaseapp.com",
+  databaseURL: "https://omukae-app-3620d-default-rtdb.firebaseio.com",
+  projectId: "omukae-app-3620d",
+  storageBucket: "omukae-app-3620d.firebasestorage.app",
+  messagingSenderId: "412744092631",
+  appId: "1:412744092631:web:368dd76b7e2c6cf22ed992",
+  measurementId: "G-5KH5RS4WZ9"
+    };
+
+    // Firebaseの初期化
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.database();
+
     // ── データ定数 ──────────────────────────────────────────────────
-    // ★ファミサポさんをAさん・Oさんの2名に変更（色分け設定）
     const PEOPLE = [
       { id: "mother",     label: "母",        emoji: "👩", bg: "bg-rose-100",   text: "text-rose-700",   accent: "#E8547A", light: "#FFF0F5" },
       { id: "father",     label: "父",        emoji: "👨", bg: "bg-indigo-100", text: "text-indigo-700", accent: "#4B5BA0", light: "#F0F2FF" },
@@ -35,7 +55,6 @@
       { id: "holiday", label: "お休み", emoji: "🌸", bg: "bg-gray-100",    text: "text-gray-500"    },
     ];
 
-    // 基本パターンの設定例（必要に応じて画面から変更可能です）
     const WEEKLY_TEMPLATE = {
       1: { time: "15:00", activity: "gakudo",  person: "",           lessonName: "", notes: "基本パターン" },
       2: { time: "15:00", activity: "gakudo",  person: "father",     lessonName: "", notes: "基本パターン" },
@@ -70,18 +89,20 @@
       const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`;
       const todayKey = fmtKey(today.getFullYear(), today.getMonth(), today.getDate());
 
-      // 永続化ストレージ（localStorage）
+      // ★リアルタイムクラウド同期（誰かが更新すると自動で全員の画面が変わります）
       useEffect(() => {
-        try {
-          const res = localStorage.getItem("omukaecho-v1");
-          if (res) setSchedule(JSON.parse(res));
-        } catch(_) {}
-        setLoading(false);
+        const ref = db.ref("omukae_schedules");
+        ref.on("value", (snapshot) => {
+          const data = snapshot.val();
+          setSchedule(data || {});
+          setLoading(false);
+        });
+        return () => ref.off();
       }, []);
 
       const persist = (next) => {
         setSchedule(next);
-        try { localStorage.setItem("omukaecho-v1", JSON.stringify(next)); } catch(_) {}
+        db.ref("omukae_schedules").set(next);
       };
 
       const firstDOW    = new Date(year, month, 1).getDay();
@@ -160,7 +181,7 @@
       if (loading) return (
         <div className="flex flex-col items-center justify-center h-screen" style={{background:"#FFF8F0"}}>
           <div className="text-5xl mb-3">🚃</div>
-          <div className="text-gray-400 text-sm">読み込み中...</div>
+          <div className="text-gray-400 text-sm">クラウドと同期中...</div>
         </div>
       );
 
@@ -228,7 +249,6 @@
               </button>
             </div>
 
-            {/* ★4人分のシフト集計カウンター */}
             <div className="grid grid-cols-4 gap-1.5 mb-4">
               {PEOPLE.map(p => (
                 <div key={p.id} className="rounded-2xl py-1.5 px-1 text-center" style={{backgroundColor:p.light}}>
@@ -387,7 +407,6 @@
                       {modal.data.activity==="lesson" && <input type="text" placeholder="習い事名" value={modal.data.lessonName||""} onChange={e=>patchModal({lessonName:e.target.value})} className="mt-1 w-full border rounded-xl p-2 text-xs" />}
                     </div>
 
-                    {/* ★5つの選択肢（未定＋4人）をキレイに配置 */}
                     <div>
                       <label className="block text-xs font-medium mb-1">👤 お迎えする人</label>
                       <div className="grid grid-cols-5 gap-1">
