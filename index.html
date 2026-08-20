@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -42,7 +43,6 @@
     const db = firebase.database();
     const auth = firebase.auth();
 
-    // ── データ定数 ──────────────────────────────────────────────────
     const PEOPLE = [
       { id: "mother",     label: "母",        emoji: "👩", bg: "bg-rose-100",   text: "text-rose-700",   accent: "#E8547A", light: "#FFF0F5" },
       { id: "father",     label: "父",        emoji: "👨", bg: "bg-indigo-100", text: "text-indigo-700", accent: "#4B5BA0", light: "#F0F2FF" },
@@ -90,8 +90,14 @@
       const [modal,    setModal]      = useState(null);   
       const [tab,      setTab]        = useState("calendar"); 
 
-      // 認証状態の監視
+      // 認証状態の監視 & リダイレクト結果の受信
       useEffect(() => {
+        auth.getRedirectResult().catch((err) => {
+          if (err && err.code) {
+            setAuthError(`ログインエラー: ${err.message}`);
+          }
+        });
+
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
           setUser(currentUser);
           setAuthLoading(false);
@@ -99,7 +105,7 @@
         return () => unsubscribe();
       }, []);
 
-      // データベース同期（ログイン時のみ実行）
+      // データベース同期
       useEffect(() => {
         if (!user) return;
         const ref = db.ref("omukae_schedules");
@@ -110,16 +116,11 @@
         return () => ref.off();
       }, [user]);
 
-      // Googleログイン処理
-      const handleGoogleLogin = async () => {
+      // スマホで安全に動作するリダイレクトログイン
+      const handleGoogleLogin = () => {
         setAuthError("");
         const provider = new firebase.auth.GoogleAuthProvider();
-        try {
-          await auth.signInWithPopup(provider);
-        } catch (err) {
-          console.error(err);
-          setAuthError("ログインに失敗しました。ブラウザのポップアップ設定を確認してください。");
-        }
+        auth.signInWithRedirect(provider);
       };
 
       const handleLogout = () => {
@@ -134,11 +135,10 @@
       if (authLoading) return (
         <div className="flex flex-col items-center justify-center h-screen" style={{background:"#FFF8F0"}}>
           <div className="text-5xl mb-3 animate-bounce">🚃</div>
-          <div className="text-gray-400 text-sm">読み込み中...</div>
+          <div className="text-gray-400 text-sm">認証を確認中...</div>
         </div>
       );
 
-      // 未ログイン時の画面
       if (!user) {
         return (
           <div className="min-h-screen flex items-center justify-center px-4" style={{background:"linear-gradient(160deg,#FFF8F0 0%,#F0F2FF 100%)"}}>
@@ -148,7 +148,7 @@
               <p className="text-xs text-gray-400 mt-1 mb-6">利用するにはGoogleアカウントでログインしてください</p>
 
               {authError && (
-                <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl mb-4">
+                <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl mb-4 text-left">
                   {authError}
                 </div>
               )}
@@ -170,7 +170,6 @@
         );
       }
 
-      // カレンダー処理
       const year  = viewDate.getFullYear();
       const month = viewDate.getMonth();
       const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`;
@@ -520,4 +519,6 @@
   </script>
 </body>
 </html>
+
+
 
