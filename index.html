@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -52,20 +50,20 @@
       { id: "famisapo_o", label: "ファミサポO", short: "サポO", emoji: "🤝", bg: "bg-emerald-100",text: "text-emerald-700",accent: "#059669", light: "#ECFDF5" },
     ];
 
-    // ファミサポ選択時の自宅受取担当
+    // ★家で迎え入れる人の選択肢（「未定」を追加）
     const RECEIVERS = [
-      { id: "father", label: "父", emoji: "👨" },
-      { id: "mother", label: "母", emoji: "👩" },
-      { id: "other",  label: "その他", emoji: "👥" },
+      { id: "unassigned", label: "未定", short: "未定", emoji: "❓", isAlert: true },
+      { id: "father",     label: "父",   short: "父",   emoji: "👨", isAlert: false },
+      { id: "mother",     label: "母",   short: "母",   emoji: "👩", isAlert: false },
+      { id: "other",      label: "その他", short: "他",   emoji: "👥", isAlert: false },
     ];
 
-    // 基本パターン（平日のデフォルト設定）
     const WEEKLY_TEMPLATE = {
-      1: { time: "15:00", person: "",           receiver: "mother", receiverOther: "", isHoliday: false, notes: "基本パターン" },
-      2: { time: "15:00", person: "father",     receiver: "",       receiverOther: "", isHoliday: false, notes: "基本パターン" },
-      3: { time: "14:30", person: "famisapo_a", receiver: "mother", receiverOther: "", isHoliday: false, notes: "基本パターン" },
-      4: { time: "15:00", person: "mother",     receiver: "",       receiverOther: "", isHoliday: false, notes: "基本パターン" },
-      5: { time: "16:00", person: "famisapo_o", receiver: "father", receiverOther: "", isHoliday: false, notes: "基本パターン" },
+      1: { time: "15:00", person: "",           receiver: "unassigned", receiverOther: "", isHoliday: false, notes: "基本パターン" },
+      2: { time: "15:00", person: "father",     receiver: "unassigned", receiverOther: "", isHoliday: false, notes: "基本パターン" },
+      3: { time: "14:30", person: "famisapo_a", receiver: "mother",     receiverOther: "", isHoliday: false, notes: "基本パターン" },
+      4: { time: "15:00", person: "mother",     receiver: "unassigned", receiverOther: "", isHoliday: false, notes: "基本パターン" },
+      5: { time: "16:00", person: "famisapo_o", receiver: "father",     receiverOther: "", isHoliday: false, notes: "基本パターン" },
     };
 
     const DAY_NAMES   = ["日","月","火","水","木","金","土"];
@@ -83,7 +81,7 @@
     const DEFAULT_DAY_DATA = { 
       time: "15:00", 
       person: "", 
-      receiver: "mother", 
+      receiver: "unassigned", 
       receiverOther: "", 
       isHoliday: false,
       notes: "" 
@@ -101,7 +99,6 @@
       const [modal,    setModal]      = useState(null);   
       const [tab,      setTab]        = useState("calendar"); 
 
-      // 認証状態の監視
       useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
           setUser(currentUser);
@@ -110,7 +107,6 @@
         return () => unsubscribe();
       }, []);
 
-      // データベース同期
       useEffect(() => {
         if (!user) return;
         const ref = db.ref("omukae_schedules");
@@ -124,7 +120,6 @@
         return () => ref.off();
       }, [user]);
 
-      // Googleログイン
       const handleGoogleLogin = async () => {
         setAuthError("");
         const provider = new firebase.auth.GoogleAuthProvider();
@@ -156,7 +151,6 @@
         </div>
       );
 
-      // 未ログイン画面
       if (!user) {
         return (
           <div className="min-h-screen flex items-center justify-center px-4" style={{background:"linear-gradient(160deg,#FFF8F0 0%,#F0F2FF 100%)"}}>
@@ -199,6 +193,12 @@
       const isCurrentMonth = today.getFullYear()===year && today.getMonth()===month;
 
       const isDayHoliday = (data) => data?.isHoliday || data?.activity === "holiday";
+      
+      // 自宅待機が未定かどうかを判定する関数
+      const isReceiverUnassigned = (data) => {
+        if (!data || !data.person || !data.person.startsWith("famisapo") || isDayHoliday(data)) return false;
+        return !data.receiver || data.receiver === "unassigned";
+      };
 
       const shiftCounts = PEOPLE.reduce((acc, p) => {
         acc[p.id] = Object.entries(schedule).filter(
@@ -226,6 +226,7 @@
         const key = fmtKey(year, month, day);
         const existing = schedule[key] ? { ...schedule[key] } : { ...DEFAULT_DAY_DATA };
         if (existing.activity === "holiday") existing.isHoliday = true;
+        if (!existing.receiver) existing.receiver = "unassigned";
         setModal({ key, data: existing });
       };
 
@@ -240,6 +241,14 @@
       const claimShift = (key, personId) => {
         const existing = schedule[key] || {...DEFAULT_DAY_DATA};
         const next = { ...schedule, [key]: { ...existing, person: personId } };
+        persist(next);
+        if (modal && modal.key === key) setModal(null);
+      };
+
+      // 家での受け入れ担当を引き受ける
+      const claimReceiver = (key, receiverId) => {
+        const existing = schedule[key] || {...DEFAULT_DAY_DATA};
+        const next = { ...schedule, [key]: { ...existing, receiver: receiverId } };
         persist(next);
         if (modal && modal.key === key) setModal(null);
       };
@@ -283,6 +292,7 @@
       const todayPerson = todayData?.person ? getPerson(todayData.person) : null;
       
       const isTodayFamisapo = todayData?.person?.startsWith("famisapo");
+      const todayReceiverAlert = isReceiverUnassigned(todayData);
       const todayReceiver = todayData?.receiver ? getReceiver(todayData.receiver) : null;
       const todayReceiverLabel = todayData?.receiver === "other" 
         ? (todayData.receiverOther || "その他") 
@@ -321,8 +331,10 @@
 
               {/* 今日のお迎えバナー */}
               {isCurrentMonth && todayData && !todayHoliday && (
-                <div className="bg-white/20 border border-white/30 rounded-2xl p-3 flex items-center gap-3">
-                  <span className="text-3xl">{todayPerson?.emoji || "❓"}</span>
+                <div className={`border rounded-2xl p-3 flex items-center gap-3 transition-all ${
+                  todayReceiverAlert ? "bg-red-600/90 border-red-300 ring-2 ring-white animate-pulse" : "bg-white/20 border-white/30"
+                }`}>
+                  <span className="text-3xl">{todayReceiverAlert ? "🚨" : (todayPerson?.emoji || "❓")}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-orange-100 font-medium">今日のおむかえ</p>
                     <p className="font-bold text-white text-base">
@@ -331,15 +343,28 @@
                     </p>
                     
                     {/* ファミサポ時の家受け入れ担当 */}
-                    {isTodayFamisapo && todayReceiverLabel && (
-                      <p className="text-xs font-bold text-amber-200 mt-0.5 flex items-center gap-1">
-                        <span>🏠 家で待つ人:</span>
-                        <span className="bg-black/20 px-1.5 py-0.5 rounded text-white">{todayReceiverLabel}</span>
-                      </p>
+                    {isTodayFamisapo && (
+                      <div className="mt-1">
+                        {todayReceiverAlert ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-yellow-300">⚠️【至急】家で待つ人が未定です！</span>
+                            <div className="flex gap-1 mt-0.5">
+                              <button onClick={() => claimReceiver(todayKey, "mother")} className="bg-white text-rose-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">👩 母が待つ</button>
+                              <button onClick={() => claimReceiver(todayKey, "father")} className="bg-white text-indigo-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">👨 父が待つ</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs font-bold text-amber-200 flex items-center gap-1">
+                            <span>🏠 家で待つ人:</span>
+                            <span className="bg-black/20 px-1.5 py-0.5 rounded text-white">{todayReceiverLabel}</span>
+                          </p>
+                        )}
+                      </div>
                     )}
 
                     {todayData.notes && <p className="text-xs text-orange-100 mt-0.5 opacity-80">📝 {todayData.notes}</p>}
                   </div>
+
                   {!todayPerson && (
                     <div className="flex flex-col gap-1">
                       <button onClick={() => claimShift(todayKey, "mother")} className="bg-white text-rose-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">👩 母</button>
@@ -387,11 +412,12 @@
                         const holiday = isDayHoliday(data);
                         const isSeeking = data && !data.person && !holiday;
                         const isFs = data?.person?.startsWith("famisapo");
+                        const recAlert = isReceiverUnassigned(data);
                         const rec = data?.receiver ? getReceiver(data.receiver) : null;
-                        const recLabel = data?.receiver === "other" ? (data.receiverOther || "他") : rec?.label;
+                        const recLabel = data?.receiver === "other" ? (data.receiverOther || "他") : rec?.short;
 
                         return (
-                          <div key={key} onClick={()=>openEdit(day)} className={`flex-1 rounded-xl p-1.5 text-center cursor-pointer ${isT ? "ring-2 ring-orange-400" : ""}`} style={{backgroundColor: holiday ? "#F3F4F6" : isSeeking ? "#FEF2F2" : (p ? p.light : "#F8F8F8")}}>
+                          <div key={key} onClick={()=>openEdit(day)} className={`flex-1 rounded-xl p-1.5 text-center cursor-pointer ${isT ? "ring-2 ring-orange-400" : ""} ${recAlert ? "ring-2 ring-red-500 bg-red-50" : ""}`} style={{backgroundColor: holiday ? "#F3F4F6" : isSeeking ? "#FEF2F2" : (p ? (recAlert ? "#FEF2F2" : p.light) : "#F8F8F8")}}>
                             <p className="text-[10px] text-gray-400">{DAY_NAMES[dow]}</p>
                             <p className="text-xs font-bold text-gray-700">{day}</p>
                             {holiday ? (
@@ -399,11 +425,15 @@
                             ) : isSeeking ? (
                               <p className="text-[9px] font-bold text-red-500 animate-pulse">⚠️未定</p>
                             ) : p ? (
-                              <div className="space-y-0.5">
-                                <p className="text-[9px] font-mono text-gray-500 leading-none">{data.time || "15:00"}</p>
+                              <div className="space-y-0.5 mt-0.5">
+                                <p className="text-[8px] font-mono text-gray-500 leading-none">{data.time || "15:00"}</p>
                                 <p className="text-[9px] font-bold truncate" style={{color:p.accent}}>{p.short}</p>
-                                {isFs && recLabel && (
-                                  <p className="text-[8px] font-bold text-amber-800 leading-tight">🏠{recLabel}</p>
+                                {isFs && (
+                                  <p className={`text-[8px] font-bold rounded px-0.5 leading-tight ${
+                                    recAlert ? "bg-red-600 text-white animate-pulse" : "bg-amber-200/90 text-amber-900"
+                                  }`}>
+                                    {recAlert ? "⚠️🏠未定" : `🏠${recLabel}`}
+                                  </p>
                                 )}
                               </div>
                             ) : (
@@ -435,27 +465,41 @@
                       const p    = data?.person   ? getPerson(data.person)     : null;
                       const isSeeking = data && !data.person && !holiday;
                       const isFs = data?.person?.startsWith("famisapo");
+                      const recAlert = isReceiverUnassigned(data);
                       const rec = data?.receiver ? getReceiver(data.receiver) : null;
-                      const recLabel = data?.receiver === "other" ? (data.receiverOther || "他") : rec?.label;
+                      const recLabel = data?.receiver === "other" ? (data.receiverOther || "他") : rec?.short;
 
                       return (
-                        <div key={day} onClick={()=>openEdit(day)} className={`h-16 border-r border-b border-gray-50 p-1 flex flex-col justify-between ${isWE ? "bg-gray-50" : `cursor-pointer ${holiday ? "bg-gray-100/60" : isSeeking ? "bg-red-50/50" : "hover:bg-orange-50"}`} ${isT ? "ring-2 ring-orange-400 ring-inset" : ""}`}>
-                          <div className="flex items-center justify-between">
+                        <div key={day} onClick={()=>openEdit(day)} className={`h-16 border-r border-b border-gray-50 p-0.5 flex flex-col justify-between ${
+                          isWE ? "bg-gray-50" : `cursor-pointer ${holiday ? "bg-gray-100/60" : recAlert ? "bg-red-50 ring-2 ring-red-400 ring-inset" : isSeeking ? "bg-red-50/50" : "hover:bg-orange-50"}`
+                        } ${isT ? "ring-2 ring-orange-400 ring-inset" : ""}`}>
+                          <div className="flex items-center justify-between px-0.5">
                             <span className={`text-[10px] ${isT ? "w-4 h-4 rounded-full bg-orange-500 text-white font-bold flex items-center justify-center" : "text-gray-600"}`}>{day}</span>
                             {data && !holiday && p && (
-                              <span className="text-[8px] font-mono text-gray-400">{data.time || "15:00"}</span>
+                              <span className="text-[7px] font-mono text-gray-400">{data.time || "15:00"}</span>
                             )}
                           </div>
 
+                          {/* ★カレンダー内の2段表示（未定時は赤色点滅でアラート） */}
                           <div className="space-y-0.5">
                             {holiday ? (
-                              <div className="text-[8px] text-gray-400 text-center font-medium">🌸お休み</div>
+                              <div className="text-[8px] text-gray-400 text-center font-medium">🌸休</div>
                             ) : isSeeking ? (
                               <div className="text-[8px] bg-red-100 text-red-700 font-bold rounded px-0.5 text-center animate-pulse">❓未定</div>
                             ) : p && (
-                              <div className={`text-[8px] rounded px-0.5 truncate text-center ${p.bg} ${p.text} font-bold`}>
-                                {p.emoji}{p.short}
-                                {isFs && recLabel && <span className="text-amber-900 ml-0.5 font-normal">➔🏠{recLabel}</span>}
+                              <div className="flex flex-col gap-0.5">
+                                <div className={`text-[8px] rounded px-0.5 leading-tight truncate text-center font-bold ${p.bg} ${p.text}`}>
+                                  {p.emoji}{p.short}
+                                </div>
+                                {isFs && (
+                                  <div className={`text-[7px] rounded px-0.5 leading-tight truncate text-center font-bold ${
+                                    recAlert 
+                                      ? "bg-red-600 text-white shadow-sm animate-pulse" 
+                                      : "bg-amber-100 text-amber-900 border border-amber-300"
+                                  }`}>
+                                    {recAlert ? "⚠️🏠未定" : `🏠${recLabel}`}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -470,26 +514,50 @@
             {/* ── シフト（人別）ビュー ── */}
             {tab==="shift" && (
               <div className="space-y-3">
-                {/* 父母間での未定シフト調整 */}
+                {/* 父母間での未定シフト調整（駅お迎え未定 ＋ 家待機未定の両方をアラート） */}
                 {(() => {
-                  const openShifts = Object.entries(schedule).filter(([k,v]) => k.startsWith(monthPrefix) && !v.person && !isDayHoliday(v)).sort(([a],[b]) => a.localeCompare(b));
-                  if (openShifts.length === 0) return null;
+                  const unassignedShifts = Object.entries(schedule).filter(([k,v]) => {
+                    if (!k.startsWith(monthPrefix) || isDayHoliday(v)) return false;
+                    return !v.person || isReceiverUnassigned(v);
+                  }).sort(([a],[b]) => a.localeCompare(b));
+
+                  if (unassignedShifts.length === 0) return null;
                   return (
-                    <div className="bg-red-50 border border-red-200 rounded-2xl overflow-hidden shadow-sm">
-                      <div className="bg-red-500 text-white px-3 py-1.5 text-xs font-bold flex items-center justify-between">
-                        <span>📢 担当未定（父母で分担調整）</span>
-                        <span className="bg-white text-red-600 px-1.5 py-0.5 rounded-full text-[10px]">{openShifts.length}件</span>
+                    <div className="bg-red-50 border border-red-300 rounded-2xl overflow-hidden shadow-md">
+                      <div className="bg-red-600 text-white px-3 py-1.5 text-xs font-bold flex items-center justify-between">
+                        <span>🚨 調整が必要な日（未定アラート）</span>
+                        <span className="bg-white text-red-600 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{unassignedShifts.length}件</span>
                       </div>
                       <div className="divide-y divide-red-100 bg-white">
-                        {openShifts.map(([key, data]) => {
+                        {unassignedShifts.map(([key, data]) => {
                           const {month:km,day:kd} = parseKey(key);
                           const d = new Date(year,km,kd);
+                          const isPersonMissing = !data.person;
+                          const isRecMissing = isReceiverUnassigned(data);
+                          const p = data.person ? getPerson(data.person) : null;
+
                           return (
-                            <div key={key} className="p-2 flex items-center justify-between text-xs">
-                              <div>{km+1}/{kd}({DAY_NAMES[d.getDay()]}) <span className="font-mono text-gray-600 font-bold">{data.time || "15:00"}着</span></div>
-                              <div className="flex gap-1">
-                                <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-bold text-[10px]">👩 母</button>
-                                <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-bold text-[10px]">👨 父</button>
+                            <div key={key} className="p-2.5 flex items-center justify-between text-xs gap-2">
+                              <div>
+                                <div className="font-bold text-gray-800">{km+1}/{kd}({DAY_NAMES[d.getDay()]}) <span className="font-mono text-gray-500 font-normal">{data.time || "15:00"}着</span></div>
+                                <div className="text-[11px] font-bold mt-0.5">
+                                  {isPersonMissing && <span className="text-red-600">❌ 駅のお迎えが未定</span>}
+                                  {isRecMissing && <span className="text-amber-700">⚠️ {p?.label}（🏠 家で待つ人が未定！）</span>}
+                                </div>
+                              </div>
+                              <div className="flex gap-1 flex-shrink-0">
+                                {isPersonMissing && (
+                                  <>
+                                    <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-2 py-1 rounded-lg border border-rose-200 font-bold text-[10px]">👩 母が行く</button>
+                                    <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg border border-indigo-200 font-bold text-[10px]">👨 父が行く</button>
+                                  </>
+                                )}
+                                {isRecMissing && (
+                                  <>
+                                    <button onClick={() => claimReceiver(key, "mother")} className="bg-rose-50 text-rose-700 px-2 py-1 rounded-lg border border-rose-200 font-bold text-[10px]">👩 母が待つ</button>
+                                    <button onClick={() => claimReceiver(key, "father")} className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg border border-indigo-200 font-bold text-[10px]">👨 父が待つ</button>
+                                  </>
+                                )}
                               </div>
                             </div>
                           );
@@ -514,6 +582,7 @@
                           {days.map(([key,data]) => {
                             const {month:km,day:kd} = parseKey(key);
                             const d = new Date(year,km,kd);
+                            const recAlert = isReceiverUnassigned(data);
                             const rec = data?.receiver ? getReceiver(data.receiver) : null;
                             const recLabel = data?.receiver === "other" ? (data.receiverOther || "その他") : rec?.label;
 
@@ -522,8 +591,10 @@
                                 <div className="w-20 font-medium">{km+1}/{kd}({DAY_NAMES[d.getDay()]})</div>
                                 <div className="font-mono text-gray-700 font-bold">{data.time || "15:00"}着</div>
                                 {isFs ? (
-                                  <div className="text-[10px] bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-200 font-bold">
-                                    🏠 家で待つ: {recLabel}
+                                  <div className={`text-[10px] px-2 py-0.5 rounded border font-bold ${
+                                    recAlert ? "bg-red-500 text-white border-red-600 animate-pulse" : "bg-amber-50 text-amber-800 border-amber-200"
+                                  }`}>
+                                    {recAlert ? "⚠️ 家で待つ人: 未定" : `🏠 家で待つ: ${recLabel}`}
                                   </div>
                                 ) : (
                                   <div className="text-gray-400 text-[10px]">駅お迎え</div>
@@ -576,22 +647,27 @@
                       </div>
                     </div>
 
-                    {/* ③ ファミサポ選択時の受取担当 */}
+                    {/* ③ ファミサポ選択時の受取担当（4列グリッドで「未定」を追加） */}
                     {modal.data.person?.startsWith("famisapo") && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
-                        <label className="block text-xs font-bold text-amber-900 flex items-center gap-1">
-                          <span>🏠</span> 家で迎え入れる人（在宅・受取担当）
+                      <div className={`border rounded-2xl p-3 space-y-2 transition-all ${
+                        (!modal.data.receiver || modal.data.receiver === "unassigned") ? "bg-red-50 border-red-300" : "bg-amber-50 border-amber-200"
+                      }`}>
+                        <label className="block text-xs font-bold text-gray-800 flex items-center justify-between">
+                          <span className="flex items-center gap-1"><span>🏠</span> 家で迎え入れる人（在宅・受取担当）</span>
+                          {(!modal.data.receiver || modal.data.receiver === "unassigned") && (
+                            <span className="text-[10px] text-red-600 font-bold animate-pulse">※未定です</span>
+                          )}
                         </label>
-                        <div className="grid grid-cols-3 gap-1.5">
+                        <div className="grid grid-cols-4 gap-1.5">
                           {RECEIVERS.map(r => (
                             <button
                               key={r.id}
                               type="button"
                               onClick={() => patchModal({ receiver: r.id })}
                               className={`py-2 px-1 rounded-xl border flex items-center justify-center gap-1 text-xs font-bold transition-all ${
-                                (modal.data.receiver || "mother") === r.id
-                                  ? "bg-amber-500 text-white border-amber-600 shadow-sm"
-                                  : "bg-white text-gray-600 border-gray-200 hover:bg-amber-100/50"
+                                (modal.data.receiver || "unassigned") === r.id
+                                  ? (r.id === "unassigned" ? "bg-red-500 text-white border-red-600 shadow-sm" : "bg-amber-500 text-white border-amber-600 shadow-sm")
+                                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
                               }`}
                             >
                               <span>{r.emoji}</span>
