@@ -6,9 +6,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>おむかえ帳</title>
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel CDN -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <!-- Firebase SDK -->
@@ -22,7 +25,7 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-// ── ★ Firebaseの設定（ここをご自身の情報に書き換えてください） ──
+//── ★ Firebaseの設定（ここをご自身の情報に書き換えてください） ──
     const firebaseConfig = {
         apiKey: "AIzaSyAq-YN7AKHt3Th3CXr8zIZc3E9I3dIxuxU",
   authDomain: "omukae-app-3620d.firebaseapp.com",
@@ -33,9 +36,6 @@
   appId: "1:412744092631:web:368dd76b7e2c6cf22ed992",
   measurementId: "G-5KH5RS4WZ9"
     };
-
-    // 家族・ファミサポ共通の合言葉（4桁PIN）
-    const APP_PASSCODE = "2026";
 
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
@@ -51,11 +51,11 @@
       { id: "famisapo_o", label: "ファミサポO", emoji: "🤝", bg: "bg-emerald-100",text: "text-emerald-700",accent: "#059669", light: "#ECFDF5" },
     ];
 
-    // ★家で迎え入れる人（在宅担当）の選択肢
+    // ファミサポ選択時の自宅受取担当
     const RECEIVERS = [
-      { id: "father", label: "父", emoji: "👨", bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-300" },
-      { id: "mother", label: "母", emoji: "👩", bg: "bg-rose-50",   text: "text-rose-700",   border: "border-rose-300" },
-      { id: "other",  label: "その他", emoji: "👥", bg: "bg-amber-50",  text: "text-amber-700",  border: "border-amber-300" },
+      { id: "father", label: "父", emoji: "👨" },
+      { id: "mother", label: "母", emoji: "👩" },
+      { id: "other",  label: "その他", emoji: "👥" },
     ];
 
     const ACTIVITIES = [
@@ -65,9 +65,9 @@
       { id: "holiday", label: "お休み", emoji: "🌸", bg: "bg-gray-100",    text: "text-gray-500"    },
     ];
 
-    // 基本パターンの設定例（ファミサポの日には receiver も設定可能）
+    // 基本パターン設定
     const WEEKLY_TEMPLATE = {
-      1: { time: "15:00", activity: "gakudo",  person: "",           receiver: "",       receiverOther: "", lessonName: "", notes: "基本パターン" },
+      1: { time: "15:00", activity: "gakudo",  person: "",           receiver: "mother", receiverOther: "", lessonName: "", notes: "基本パターン" },
       2: { time: "15:00", activity: "gakudo",  person: "father",     receiver: "",       receiverOther: "", lessonName: "", notes: "基本パターン" },
       3: { time: "14:30", activity: "lesson",  person: "famisapo_a", receiver: "mother", receiverOther: "", lessonName: "ピアノ", notes: "基本パターン" },
       4: { time: "15:00", activity: "gakudo",  person: "mother",     receiver: "",       receiverOther: "", lessonName: "", notes: "基本パターン" },
@@ -99,10 +99,9 @@
 
     function App() {
       const today = new Date();
-      const [isAuthenticated, setIsAuthenticated] = useState(false);
-      const [inputPass, setInputPass]             = useState("");
-      const [passError, setPassError]             = useState(false);
-      const [authLoading, setAuthLoading]         = useState(true);
+      const [user, setUser]               = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      const [authError, setAuthError]     = useState("");
 
       const [viewDate, setViewDate]   = useState(new Date(today.getFullYear(), today.getMonth(), 1));
       const [schedule, setSchedule]   = useState({});
@@ -110,42 +109,47 @@
       const [modal,    setModal]      = useState(null);   
       const [tab,      setTab]        = useState("calendar"); 
 
-      // 起動時：匿名認証 ＋ 保存済み合言葉のチェック
+      // 認証状態の監視
       useEffect(() => {
-        auth.signInAnonymously().catch(console.error);
-
-        const savedPass = localStorage.getItem("omukae_passcode");
-        if (savedPass === APP_PASSCODE) {
-          setIsAuthenticated(true);
-        }
-        setAuthLoading(false);
+        const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+          setUser(currentUser);
+          setAuthLoading(false);
+        });
+        return () => unsubscribe();
       }, []);
 
-      // データベース同期
+      // データベース同期（ログイン中のみ）
       useEffect(() => {
-        if (!isAuthenticated) return;
+        if (!user) return;
         const ref = db.ref("omukae_schedules");
         ref.on("value", (snapshot) => {
           setSchedule(snapshot.val() || {});
           setLoading(false);
+        }, (err) => {
+          console.error(err);
+          setAuthError("データベースへのアクセス権限がありません。許可されたGoogleアカウントでログインしてください。");
         });
         return () => ref.off();
-      }, [isAuthenticated]);
+      }, [user]);
 
-      const handlePassSubmit = (e) => {
-        e.preventDefault();
-        if (inputPass === APP_PASSCODE) {
-          localStorage.setItem("omukae_passcode", inputPass);
-          setIsAuthenticated(true);
-          setPassError(false);
-        } else {
-          setPassError(true);
+      // Googleログイン（Chrome最適化）
+      const handleGoogleLogin = async () => {
+        setAuthError("");
+        const provider = new firebase.auth.GoogleAuthProvider();
+        try {
+          await auth.signInWithPopup(provider);
+        } catch (err) {
+          console.error(err);
+          if (err.code === "auth/popup-blocked") {
+            setAuthError("ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。");
+          } else {
+            setAuthError(`ログインに失敗しました: ${err.message}`);
+          }
         }
       };
 
       const handleLogout = () => {
-        localStorage.removeItem("omukae_passcode");
-        setIsAuthenticated(false);
+        auth.signOut();
       };
 
       const persist = (next) => {
@@ -156,43 +160,43 @@
       if (authLoading) return (
         <div className="flex flex-col items-center justify-center h-screen" style={{background:"#FFF8F0"}}>
           <div className="text-5xl mb-3 animate-bounce">🚃</div>
-          <div className="text-gray-400 text-sm">読み込み中...</div>
+          <div className="text-gray-400 text-sm">認証を確認中...</div>
         </div>
       );
 
-      // 合言葉入力画面
-      if (!isAuthenticated) {
+      // 未ログイン画面
+      if (!user) {
         return (
           <div className="min-h-screen flex items-center justify-center px-4" style={{background:"linear-gradient(160deg,#FFF8F0 0%,#F0F2FF 100%)"}}>
             <div className="bg-white rounded-3xl p-6 shadow-xl w-full max-w-xs text-center">
-              <span className="text-4xl">🔐</span>
-              <h1 className="text-lg font-bold text-gray-800 mt-2">合言葉を入力</h1>
-              <p className="text-xs text-gray-400 mt-1 mb-5">おむかえ帳の暗証番号を入力してください</p>
+              <span className="text-4xl">🚉</span>
+              <h1 className="text-lg font-bold text-gray-800 mt-2">おむかえ帳</h1>
+              <p className="text-xs text-gray-400 mt-1 mb-6">父・母専用の送迎スケジュール管理です</p>
 
-              <form onSubmit={handlePassSubmit} className="space-y-4">
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  autoFocus
-                  placeholder="4桁の暗証番号"
-                  value={inputPass}
-                  onChange={(e) => setInputPass(e.target.value)}
-                  className={`w-full border text-center text-xl tracking-widest rounded-xl px-3 py-2.5 focus:outline-none ${passError ? "border-red-400 bg-red-50" : "border-gray-200 focus:ring-2 focus:ring-orange-300"}`}
-                />
-                {passError && <p className="text-xs text-red-500">暗証番号が間違っています</p>}
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-xl text-white text-sm font-bold shadow-md active:scale-95 transition-transform"
-                  style={{background:"linear-gradient(135deg,#F06030,#C84070)"}}
-                >
-                  開く
-                </button>
-              </form>
+              {authError && (
+                <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl mb-4 text-left leading-relaxed">
+                  {authError}
+                </div>
+              )}
+
+              <button
+                onClick={handleGoogleLogin}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-sm font-bold shadow-sm transition-transform active:scale-95"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                Googleでログイン
+              </button>
             </div>
           </div>
         );
       }
 
+      // カレンダー処理
       const year  = viewDate.getFullYear();
       const month = viewDate.getMonth();
       const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`;
@@ -237,6 +241,7 @@
         setModal(null);
       };
 
+      // 父母間で担当を引き受ける
       const claimShift = (key, personId) => {
         const existing = schedule[key] || {...DEFAULT_DAY_DATA};
         const next = { ...schedule, [key]: { ...existing, person: personId } };
@@ -274,7 +279,7 @@
       if (loading) return (
         <div className="flex flex-col items-center justify-center h-screen" style={{background:"#FFF8F0"}}>
           <div className="text-5xl mb-3">🚃</div>
-          <div className="text-gray-400 text-sm">データ取得中...</div>
+          <div className="text-gray-400 text-sm">クラウド同期中...</div>
         </div>
       );
 
@@ -282,7 +287,6 @@
       const todayPerson = todayData?.person ? getPerson(todayData.person) : null;
       const todayAct    = todayData?.activity ? getActivity(todayData.activity) : null;
       
-      // 今日の自宅受け入れ担当
       const isTodayFamisapo = todayData?.person?.startsWith("famisapo");
       const todayReceiver = todayData?.receiver ? getReceiver(todayData.receiver) : null;
       const todayReceiverLabel = todayData?.receiver === "other" 
@@ -298,12 +302,17 @@
                   <span className="text-2xl">🚉</span>
                   <h1 className="text-lg font-bold text-white tracking-tight">おむかえ帳</h1>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="bg-black/20 hover:bg-black/30 text-white text-[10px] px-2.5 py-1 rounded-full transition-colors"
-                >
-                  ロック
-                </button>
+                <div className="flex items-center gap-2">
+                  {user.photoURL && (
+                    <img src={user.photoURL} alt="user" className="w-6 h-6 rounded-full border border-white/40 shadow-sm" />
+                  )}
+                  <button
+                    onClick={handleLogout}
+                    className="bg-black/20 hover:bg-black/30 text-white text-[10px] px-2.5 py-1 rounded-full transition-colors"
+                  >
+                    ログアウト
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-end gap-1 mb-3">
@@ -326,7 +335,6 @@
                       <span className="ml-2 font-normal text-orange-200 text-sm">{todayData.time}着</span>
                     </p>
                     
-                    {/* ★ファミサポ時の自宅受け入れ担当を大きく表示 */}
                     {isTodayFamisapo && todayReceiverLabel && (
                       <p className="text-xs font-bold text-amber-200 mt-0.5 flex items-center gap-1">
                         <span>🏠 家で待つ人:</span>
@@ -342,8 +350,8 @@
                   </div>
                   {!todayPerson && (
                     <div className="flex flex-col gap-1">
-                      <button onClick={() => claimShift(todayKey, "mother")} className="bg-white text-rose-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">母</button>
-                      <button onClick={() => claimShift(todayKey, "father")} className="bg-white text-indigo-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">父</button>
+                      <button onClick={() => claimShift(todayKey, "mother")} className="bg-white text-rose-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">母が行く</button>
+                      <button onClick={() => claimShift(todayKey, "father")} className="bg-white text-indigo-600 text-[10px] px-2 py-0.5 rounded font-bold shadow">父が行く</button>
                     </div>
                   )}
                 </div>
@@ -363,6 +371,7 @@
               </button>
             </div>
 
+            {/* シフト回数カウンター */}
             <div className="grid grid-cols-4 gap-1.5 mb-4">
               {PEOPLE.map(p => (
                 <div key={p.id} className="rounded-2xl py-1.5 px-1 text-center" style={{backgroundColor:p.light}}>
@@ -395,7 +404,7 @@
                             <p className="text-xs font-bold text-gray-700">{day}</p>
                             {ac && <p className="text-sm">{ac.emoji}</p>}
                             {isSeeking ? (
-                              <p className="text-[9px] font-bold text-red-500 animate-pulse">⚠️SOS</p>
+                              <p className="text-[9px] font-bold text-red-500 animate-pulse">⚠️未定</p>
                             ) : p && data.activity!=="holiday" ? (
                               <div>
                                 <p className="text-[9px] font-medium truncate" style={{color:p.accent}}>{p.label}</p>
@@ -441,7 +450,7 @@
                           <div className="space-y-0.5">
                             {ac && <div className={`text-[8px] rounded px-0.5 truncate ${ac.bg} ${ac.text}`}>{ac.emoji}{ac.id==="lesson"&&data.lessonName ? data.lessonName : ac.label}</div>}
                             {isSeeking ? (
-                              <div className="text-[8px] bg-red-100 text-red-700 font-bold rounded px-0.5 text-center animate-pulse">❓募集</div>
+                              <div className="text-[8px] bg-red-100 text-red-700 font-bold rounded px-0.5 text-center animate-pulse">❓未定</div>
                             ) : p && data.activity!=="holiday" && (
                               <div className={`text-[8px] rounded px-0.5 truncate ${p.bg} ${p.text}`}>
                                 {p.emoji}{p.label}
@@ -460,13 +469,14 @@
             {/* ── シフト（人別）ビュー ── */}
             {tab==="shift" && (
               <div className="space-y-3">
+                {/* 父母間での未定シフト調整 */}
                 {(() => {
                   const openShifts = Object.entries(schedule).filter(([k,v]) => k.startsWith(monthPrefix) && !v.person && v.activity!=="holiday").sort(([a],[b]) => a.localeCompare(b));
                   if (openShifts.length === 0) return null;
                   return (
-                    <div className="bg-red-50 border border-red-200 rounded-2xl overflow-hidden">
+                    <div className="bg-red-50 border border-red-200 rounded-2xl overflow-hidden shadow-sm">
                       <div className="bg-red-500 text-white px-3 py-1.5 text-xs font-bold flex items-center justify-between">
-                        <span>📢 お迎え募集中（空きシフト）</span>
+                        <span>📢 担当未定（父母で分担調整）</span>
                         <span className="bg-white text-red-600 px-1.5 py-0.5 rounded-full text-[10px]">{openShifts.length}件</span>
                       </div>
                       <div className="divide-y divide-red-100 bg-white">
@@ -478,8 +488,8 @@
                             <div key={key} className="p-2 flex items-center justify-between text-xs">
                               <div>{km+1}/{kd}({DAY_NAMES[d.getDay()]}) <span className="font-mono text-gray-400">{data.time}</span> <span className="ml-1 text-gray-500">{ac?.emoji}{data.activity==="lesson"&&data.lessonName?data.lessonName:ac?.label}</span></div>
                               <div className="flex gap-1">
-                                <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-bold text-[10px]">母</button>
-                                <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-bold text-[10px]">父</button>
+                                <button onClick={() => claimShift(key, "mother")} className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-bold text-[10px]">👩 母</button>
+                                <button onClick={() => claimShift(key, "father")} className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-bold text-[10px]">👨 父</button>
                               </div>
                             </div>
                           );
@@ -549,13 +559,11 @@
 
                 {modal.data.activity!=="holiday" && (
                   <>
-                    {/* 駅お迎え時刻 */}
                     <div>
                       <label className="block text-xs font-medium mb-1">🚉 駅お迎え時刻</label>
                       <input type="time" value={modal.data.time||"15:00"} onChange={e=>patchModal({time:e.target.value})} className="w-full border rounded-xl p-2" />
                     </div>
 
-                    {/* お迎え後の予定 */}
                     <div>
                       <label className="block text-xs font-medium mb-1">📋 お迎え後の予定</label>
                       <div className="grid grid-cols-3 gap-1.5">
@@ -566,20 +574,19 @@
                       {modal.data.activity==="lesson" && <input type="text" placeholder="習い事名" value={modal.data.lessonName||""} onChange={e=>patchModal({lessonName:e.target.value})} className="mt-1 w-full border rounded-xl p-2 text-xs" />}
                     </div>
 
-                    {/* お迎えする人 */}
                     <div>
                       <label className="block text-xs font-medium mb-1">👤 駅にお迎えする人</label>
                       <div className="grid grid-cols-5 gap-1">
-                        <button onClick={()=>patchModal({person:""})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person==="" ? "bg-red-100 text-red-700 border-transparent font-bold" : "bg-white text-gray-400"}`}><span className="text-base">❓</span><span className="text-[9px] font-bold">未定募集</span></button>
+                        <button onClick={()=>patchModal({person:""})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person==="" ? "bg-red-100 text-red-700 border-transparent font-bold" : "bg-white text-gray-400"}`}><span className="text-base">❓</span><span className="text-[9px] font-bold">未定</span></button>
                         {PEOPLE.map(p => (
                           <button key={p.id} onClick={()=>patchModal({person:p.id})} className={`py-2 rounded-xl border flex flex-col items-center ${modal.data.person===p.id ? `${p.bg} ${p.text} border-transparent font-bold` : "bg-white text-gray-400"}`}><span className="text-base">{p.emoji}</span><span className="text-[9px] font-bold truncate w-full text-center">{p.label}</span></button>
                         ))}
                       </div>
                     </div>
 
-                    {/* ★ファミサポ選択時のみ表示：家で迎え入れる人（在宅担当） */}
+                    {/* ファミサポ選択時の受取担当 */}
                     {modal.data.person?.startsWith("famisapo") && (
-                      <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 space-y-2 animate-fadeIn">
+                      <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 space-y-2">
                         <label className="block text-xs font-bold text-amber-900 flex items-center gap-1">
                           <span>🏠</span> 家で迎え入れる人（在宅・受取担当）
                         </label>
@@ -591,7 +598,7 @@
                               onClick={() => patchModal({ receiver: r.id })}
                               className={`py-2 px-1 rounded-xl border flex items-center justify-center gap-1 text-xs font-bold transition-all ${
                                 (modal.data.receiver || "mother") === r.id
-                                  ? "bg-amber-500 text-white border-amber-600 shadow-sm scale-[1.02]"
+                                  ? "bg-amber-500 text-white border-amber-600 shadow-sm"
                                   : "bg-white text-gray-600 border-gray-200 hover:bg-amber-100/50"
                               }`}
                             >
@@ -601,7 +608,6 @@
                           ))}
                         </div>
 
-                        {/* 「その他」を選んだ場合の詳細入力 */}
                         {modal.data.receiver === "other" && (
                           <input
                             type="text"
@@ -615,7 +621,6 @@
                       </div>
                     )}
 
-                    {/* メモ */}
                     <div>
                       <label className="block text-xs font-medium mb-1">📝 メモ</label>
                       <input type="text" placeholder="メモ" value={modal.data.notes||""} onChange={e=>patchModal({notes:e.target.value})} className="w-full border rounded-xl p-2 text-xs" />
@@ -640,4 +645,6 @@
   </script>
 </body>
 </html>
+
+
 
